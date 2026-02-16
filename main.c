@@ -6,7 +6,7 @@
 #include <termios.h>
 
 #define RED   "\x1b[31m"
-#define
+#define GREEN "\x1b[32m"
 #define BG_WHITE "\x1b[47m"
 #define RESET "\x1b[0m"
 
