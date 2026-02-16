@@ -50,7 +50,10 @@ Game LoadLevel(const char *path)
     Game game = InitGame(14);
     FILE* file = fopen(path, "rb");
     if (!file)
-        printf("Could not open %s : %s", path, strerror(errno));
+    {
+        printf("Could not open %s : %s\n", path, strerror(errno));
+        exit(0);
+    }
 
     for(size_t i = 0; i < game.size; i++){
         for(size_t j = 0; j < game.size; j++){
@@ -172,23 +175,17 @@ void commitValues(Game* game)
     }
 }
 
-size_t Rule1(Game* game)
+size_t TwoEqualsThree(Game* game)
 {
+    // 00 -> 001/100
+    // 11 -> 110/011
     char somethingChangedHere = 0;
     for (size_t i = 0; i < game->size; i++)
     {
         for (size_t j = 0; j < game->size; j++)
         {
             Cell* cell = GetCellPtr(game, i, j);
-            if (cell->isImmutable) continue; /* skip immutable cells */
             if (cell->value == ' ' || cell->value == 0) continue; /* skip empty cells */
-
-            char pairs[4][2][2] = {
-                {{1, 0}, {2, 0}},
-                {{-1, 0}, {-2, 0}},
-                {{0, 1}, {0, 2}},
-                {{0, -1}, {0, -2}}
-            };
 
             Cell* cells[5][2] = {
                 {cell, NULL},
@@ -200,9 +197,11 @@ size_t Rule1(Game* game)
             char c = cells[0][0]->value;
             if (c != ' ' && c != 0)
             {
-                for (size_t k = 0; k < 4; k++) {
+                for (size_t k = 1; k <= 4; k++) {
                     Cell* c1 = cells[k][0];
                     Cell* c2 = cells[k][1];
+                    if (!c1 || !c2) continue;
+                    if (c2->isImmutable) continue;
                     if (c2->value != ' ' && c2->value != 0)
                         continue;
                     if (c == c1->value)
@@ -214,13 +213,150 @@ size_t Rule1(Game* game)
             }
         }
     }
-    return 0;
+    return somethingChangedHere;
 }
 
-size_t Rule2(Game* game)
+size_t FillTheHole(Game* game)
 {
-    printf("Rule 2\n");
-    (void*) game;
+    // 0_0 -> 010
+    // 1_1 -> 101
+    char somethingChangedHere = 0;
+    for (size_t i = 0; i < game->size; i++)
+    {
+        for (size_t j = 0; j < game->size; j++)
+        {
+            Cell* cell = GetCellPtr(game, i, j);
+            if (cell->value == ' ' || cell->value == 0) continue; /* skip empty cells */
+
+            Cell* cells[5][2] = {
+                {cell, NULL},
+                {GetCellPtr(game, i+1, j), GetCellPtr(game, i+2, j)},
+                {GetCellPtr(game, i, j+1), GetCellPtr(game, i, j+2)},
+                {GetCellPtr(game, i-1, j), GetCellPtr(game, i-2, j)},
+                {GetCellPtr(game, i, j-1), GetCellPtr(game, i, j-2)}
+            };
+            char c = cells[0][0]->value;
+            if (c != ' ' && c != 0)
+            {
+                for (size_t k = 1; k <= 4; k++) {
+                    Cell* c1 = cells[k][0];
+                    Cell* c2 = cells[k][1];
+                    if (!c1 || !c2) continue;
+                    if (c1->isImmutable) continue;
+                    if (c1->value != ' ' && c1->value != 0)
+                        continue;
+                    if (c == c2->value)
+                    {
+                        c1->value = c == '0' ? '1' : '0';
+                        somethingChangedHere = 1;
+                    }
+                }
+            }
+        }
+    }
+    return somethingChangedHere;
+}
+
+size_t FillLastValue(Game* game)
+{
+    // for each line and each value, count -> 6/7 -> .
+    size_t somethingChangedHere = 0;
+    size_t n0;
+    size_t n1;
+    for (size_t i = 0; i < game->size; i++)
+    {
+        n0 = 0;
+        n1 = 0;
+        char* lastVoid = 0;
+        char* secondLastVoid = 0;
+        for (size_t j = 0; j < game->size; j++)
+        {
+            size_t idx = i * game->size + j;
+            if(game->array[idx].value == '0') n0++;   
+            if(game->array[idx].value == '1') n1++;   
+            if(game->array[idx].value == ' ' && !lastVoid)
+            {
+                lastVoid = &game->array[idx].value;
+                continue;
+            }   
+            if(game->array[idx].value == ' ' && lastVoid) secondLastVoid = &game->array[idx].value;   
+        }
+        
+        // 13 : 6/7 // 7/6
+        if (lastVoid &&
+            ((n0 == game->size/2 - 1 &&
+            n1 == game->size/2) ||
+            (n1 == game->size/2 - 1 &&
+            n0 == game->size/2))
+        )
+        {
+            *lastVoid = n0 == 6 ? '0' : '1';
+            somethingChangedHere = 1;
+        }
+        // 12 : 5/7 // 7/5
+        if (lastVoid && secondLastVoid &&
+            ((n0 == game->size/2 - 2 &&
+            n1 == game->size/2) ||
+            (n1 == game->size/2 - 2 &&
+            n0 == game->size/2))
+        )
+        {
+            char c = n0 == 5 ? '0' : '1';
+            *lastVoid = c;
+            *secondLastVoid = c;
+            somethingChangedHere = 1;
+        }
+    }
+
+    for (size_t j = 0; j < game->size; j++)
+    {
+        n0 = 0;
+        n1 = 0;
+        char* lastVoid = 0;
+        char* secondLastVoid = 0;
+        for (size_t i = 0; i < game->size; i++)
+        {
+            size_t idx = i * game->size + j;
+            if(game->array[idx].value == '0') n0++;   
+            if(game->array[idx].value == '1') n1++;   
+            if(game->array[idx].value == ' ' && !lastVoid)
+            {
+                lastVoid = &game->array[idx].value;
+                continue;
+            }   
+            if(game->array[idx].value == ' ' && lastVoid) secondLastVoid = &game->array[idx].value;   
+        }
+        // 13 : 6/7 // 7/6
+        if (lastVoid &&
+            ((n0 == game->size/2 - 1 &&
+            n1 == game->size/2) ||
+            (n1 == game->size/2 - 1 &&
+            n0 == game->size/2))
+        )
+        {
+            *lastVoid = n0 == 6 ? '0' : '1';
+            somethingChangedHere = 1;
+        }
+        // 12 : 5/7 // 7/5
+        if (lastVoid && secondLastVoid &&
+            ((n0 == game->size/2 - 2 &&
+            n1 == game->size/2) ||
+            (n1 == game->size/2 - 2 &&
+            n0 == game->size/2))
+        )
+        {
+            char c = n0 == 5 ? '0' : '1';
+            *lastVoid = c;
+            *secondLastVoid = c;
+            somethingChangedHere = 1;
+        }
+    }
+    return somethingChangedHere;
+}
+
+size_t next(Game* game)
+{
+    (void) game;
     return 0;
 }
 
@@ -228,7 +364,7 @@ typedef size_t (*Rule)(Game*);
 
 void solve(Game* game)
 {
-    Rule rules[] = { Rule1, Rule2, NULL };
+    Rule rules[] = { TwoEqualsThree, FillTheHole, FillLastValue, NULL };
 
     size_t somethingChanged;
     do {
