@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <termios.h>
+#include <time.h>
 
 #define RED   "\x1b[31m"
 #define GREEN "\x1b[32m"
@@ -92,7 +93,7 @@ Cell* GetCellPtr(Game *game, size_t i, size_t j)
 void PrintGame(Game* game)
 {
     /* header */
-    printf("\n\n    ");
+    printf("    ");
     for (size_t j = 0; j < game->size; j++) {
         printf(" %c", 'a' + (char)j);
     }
@@ -367,12 +368,127 @@ void solve(Game* game)
     Rule rules[] = { TwoEqualsThree, FillTheHole, FillLastValue, NULL };
 
     size_t somethingChanged;
+    clock_t start = clock();
     do {
         somethingChanged = 0;
         for (size_t i = 0; rules[i] != NULL; ++i) {
             somethingChanged |= rules[i](game);
         }
     } while (somethingChanged);
+    clock_t end = clock();
+    double time_spent = ((double)(end - start)) / CLOCKS_PER_SEC * 1000000; // Convert to microseconds
+    printf("Solved in %.0f micro seconds\n", time_spent);
+}
+
+size_t checkWin(Game* game)
+{
+    // Check if all cells are filled
+    for (size_t i = 0; i < game->size * game->size; i++)
+    {
+        if (game->array[i].value == ' ' || game->array[i].value == 0)
+            return 0;
+    }
+    
+    // Check rows
+    for (size_t i = 0; i < game->size; i++)
+    {
+        size_t count0 = 0, count1 = 0;
+        
+        // Count 0s and 1s in row i
+        for (size_t j = 0; j < game->size; j++)
+        {
+            Cell* cell = GetCellPtr(game, i, j);
+            if (cell->value == '0') count0++;
+            else if (cell->value == '1') count1++;
+        }
+        
+        // Each row must have equal 0s and 1s
+        if (count0 != game->size / 2 || count1 != game->size / 2)
+            return 0;
+        
+        // Check for three consecutive identical values in row
+        for (size_t j = 0; j < game->size - 2; j++)
+        {
+            Cell* c1 = GetCellPtr(game, i, j);
+            Cell* c2 = GetCellPtr(game, i, j + 1);
+            Cell* c3 = GetCellPtr(game, i, j + 2);
+            if (c1->value == c2->value && c2->value == c3->value)
+                return 0;
+        }
+    }
+    
+    // Check columns
+    for (size_t j = 0; j < game->size; j++)
+    {
+        size_t count0 = 0, count1 = 0;
+        
+        // Count 0s and 1s in column j
+        for (size_t i = 0; i < game->size; i++)
+        {
+            Cell* cell = GetCellPtr(game, i, j);
+            if (cell->value == '0') count0++;
+            else if (cell->value == '1') count1++;
+        }
+        
+        // Each column must have equal 0s and 1s
+        if (count0 != game->size / 2 || count1 != game->size / 2)
+            return 0;
+        
+        // Check for three consecutive identical values in column
+        for (size_t i = 0; i < game->size - 2; i++)
+        {
+            Cell* c1 = GetCellPtr(game, i, j);
+            Cell* c2 = GetCellPtr(game, i + 1, j);
+            Cell* c3 = GetCellPtr(game, i + 2, j);
+            if (c1->value == c2->value && c2->value == c3->value)
+                return 0;
+        }
+    }
+    
+    // Check all rows are unique
+    for (size_t i1 = 0; i1 < game->size; i1++)
+    {
+        for (size_t i2 = i1 + 1; i2 < game->size; i2++)
+        {
+            size_t identical = 1;
+            for (size_t j = 0; j < game->size; j++)
+            {
+                Cell* cell1 = GetCellPtr(game, i1, j);
+                Cell* cell2 = GetCellPtr(game, i2, j);
+                if (cell1->value != cell2->value)
+                {
+                    identical = 0;
+                    break;
+                }
+            }
+            if (identical)
+                return 0;
+        }
+    }
+    
+    // Check all columns are unique
+    for (size_t j1 = 0; j1 < game->size; j1++)
+    {
+        for (size_t j2 = j1 + 1; j2 < game->size; j2++)
+        {
+            size_t identical = 1;
+            for (size_t i = 0; i < game->size; i++)
+            {
+                Cell* cell1 = GetCellPtr(game, i, j1);
+                Cell* cell2 = GetCellPtr(game, i, j2);
+                if (cell1->value != cell2->value)
+                {
+                    identical = 0;
+                    break;
+                }
+            }
+            if (identical)
+                return 0;
+        }
+    }
+    
+    // All checks passed - game is won!
+    return 1;
 }
 
 int main(void)
@@ -382,9 +498,10 @@ int main(void)
     enableRawMode();
     
     while (1) {
-        printf("\x1b[2J\x1b[H"); /* clear screen */
+        /* move cursor home, clear screen and scrollback to avoid stacking output */
+        printf("\x1b[H\x1b[2J"/*"\x1b[3J"*/);
         PrintGame(&game);
-        printf("\nFlèches: nav | 'a'->'0' | 'e'->'1' | 'r': clear | 'c': commit | 'q': quitter\n");
+        printf("Flèches: nav | 'a'->'0' | 'e'->'1' | 'r': clear | 'c': commit | 'q': quitter\n");
         
         char c;
         ssize_t n = read(STDIN_FILENO, &c, 1);
