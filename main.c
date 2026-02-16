@@ -13,7 +13,7 @@
 
 typedef struct __attribute__((packed)) Cell_s {
     char value;
-    size_t isMutable:1;    
+    size_t isImmutable:1;    
     size_t isCommited:1;
     size_t reserved:6; /* padding to 1 byte */    
 } Cell;
@@ -64,13 +64,14 @@ Game LoadLevel(const char *path)
                 fclose(file);
                 return game;
             }
+            size_t idx = i * game.size + j;
             if (byte == '0' || byte == '1') {
-                game.array[i * game.size + j].isMutable = 0;
+                game.array[idx].isImmutable = 1;
             }
             else if (byte == ' ') {
-                game.array[i * game.size + j].isMutable = 1;
+                game.array[idx].isImmutable = 0;
             }
-            game.array[i * game.size + j].value = byte;
+            game.array[idx].value = byte;
         }
     }
 fclose(file);
@@ -80,7 +81,9 @@ fclose(file);
 
 Cell* GetCellPtr(Game *game, size_t i, size_t j)
 {
-    return &game->array[i * game->size + j];
+    if(i<game->size && j<game->size)
+        return &game->array[i * game->size + j];
+    return 0;
 }
 
 void PrintGame(Game* game)
@@ -101,7 +104,7 @@ void PrintGame(Game* game)
 
             printf("%s%s%c%s|", 
                 isSelected ? BG_WHITE : "",
-                cell->isCommited ? YELLOW : (cell->isMutable ? RED : ""),
+                cell->isCommited ? YELLOW : (cell->isImmutable ? "" : RED),
                 ch,
                 RESET);
         }
@@ -156,18 +159,86 @@ void moveSelection(Game* game, int dx, int dy)
 void setCellValue(Game* game, char value)
 {
     Cell* cell = &game->array[game->selected];
-    if (!cell->isMutable || cell->isCommited) return; /* ignore if not mutable or already committed */
+    if (cell->isImmutable || cell->isCommited) return; /* ignore if not mutable or already committed */
     cell->value = value;
 }
 
 void commitValues(Game* game)
 {
     for (size_t i = 0; i < game->size * game->size; i++) {
-        if (game->array[i].isMutable && game->array[i].value != ' ') {
+        if (!game->array[i].isImmutable && game->array[i].value != ' ' && game->array[i].value != 0) {
             game->array[i].isCommited = 1;
         }
     }
 }
+
+size_t Rule1(Game* game)
+{
+    for (size_t i = 0; i < game->size; i++)
+    {
+        for (size_t j = 0; j < game->size; j++)
+        {
+            Cell* cell = GetCellPtr(game, i, j);
+            if (cell->isImmutable) continue; /* skip immutable cells */
+            if (cell->value == ' ' || cell->value == 0) continue; /* skip empty cells */
+            // 0 ( 1, 0) ( 2, 0)
+            // 0 (-1, 0) (-2, 0)
+            // 0 ( 0, 1) ( 0, 2)
+            // 0 ( 0,-1) ( 0,-2)
+            typedef struct tuple {size_t x, y;} tuple;
+            char pairs[4][2][2] = {
+                {{1, 0}, {2, 0}},
+                {{-1, 0}, {-2, 0}},
+                {{0, 1}, {0, 2}},
+                {{0, -1}, {0, -2}}
+            };
+
+            Cell* cells[5][2] = {
+                {cell, NULL},
+                {GetCellPtr(game, i+1, j), GetCellPtr(game, i+2, j)},
+                {GetCellPtr(game, i, j+1), GetCellPtr(game, i, j+2)},
+                {GetCellPtr(game, i-1, j), GetCellPtr(game, i-2, j)},
+                {GetCellPtr(game, i, j-1), GetCellPtr(game, i, j-2)}
+            };
+            char c = cells[0][0]->value;
+            if (c != ' ' && c != 0)
+            {
+                for (size_t k = 0; k < 4; k++) {
+                    Cell* c1 = cells[k][0];
+                    Cell* c2 = cells[k][1];
+                    if (c1->value == c) {
+                        c2->value = c;
+                        return 1;
+                    }
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+size_t Rule2(Game* game)
+{
+    printf("Rule 2\n");
+    (void*) game;
+    return 0;
+}
+
+typedef size_t (*Rule)(Game*);
+
+void solve(Game* game)
+{
+    Rule rules[] = { Rule1, Rule2, NULL };
+
+    size_t somethingChanged;
+    do {
+        somethingChanged = 0;
+        for (size_t i = 0; rules[i] != NULL; ++i) {
+            somethingChanged |= rules[i](game);
+        }
+    } while (somethingChanged);
+}
+
 int main(void)
 {
     Game game = LoadLevel("lvl1.binero"); // [CB]: InitGame(14);|LoadLevel("lvl1.binero");
@@ -184,10 +255,11 @@ int main(void)
         if (n <= 0) break;
         
         if (c == 'q') break;
-        else if (c == 'c') commitValues(&game); 
-        else if (c == 'r') setCellValue(&game, 0);
         else if (c == 'a') setCellValue(&game, '0');
         else if (c == 'e') setCellValue(&game, '1');
+        else if (c == 'c') commitValues(&game); 
+        else if (c == 'r') setCellValue(&game, ' ');
+        else if (c == 's') solve(&game); 
         else if (c == '\x1b') { /* escape sequence */
             char seq[2];
             if (read(STDIN_FILENO, &seq[0], 1) <= 0) continue;
