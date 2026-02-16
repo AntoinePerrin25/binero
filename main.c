@@ -174,6 +174,7 @@ void commitValues(Game* game)
 
 size_t Rule1(Game* game)
 {
+    char somethingChangedHere = 0;
     for (size_t i = 0; i < game->size; i++)
     {
         for (size_t j = 0; j < game->size; j++)
@@ -181,11 +182,7 @@ size_t Rule1(Game* game)
             Cell* cell = GetCellPtr(game, i, j);
             if (cell->isImmutable) continue; /* skip immutable cells */
             if (cell->value == ' ' || cell->value == 0) continue; /* skip empty cells */
-            // 0 ( 1, 0) ( 2, 0)
-            // 0 (-1, 0) (-2, 0)
-            // 0 ( 0, 1) ( 0, 2)
-            // 0 ( 0,-1) ( 0,-2)
-            typedef struct tuple {size_t x, y;} tuple;
+
             char pairs[4][2][2] = {
                 {{1, 0}, {2, 0}},
                 {{-1, 0}, {-2, 0}},
@@ -206,9 +203,12 @@ size_t Rule1(Game* game)
                 for (size_t k = 0; k < 4; k++) {
                     Cell* c1 = cells[k][0];
                     Cell* c2 = cells[k][1];
-                    if (c1->value == c) {
-                        c2->value = c;
-                        return 1;
+                    if (c2->value != ' ' && c2->value != 0)
+                        continue;
+                    if (c == c1->value)
+                    {
+                        c2->value = c == '0' ? '1' : '0';
+                        somethingChangedHere = 1;
                     }
                 }
             }
