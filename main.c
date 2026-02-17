@@ -12,6 +12,9 @@
 #define BG_WHITE "\x1b[47m"
 #define RESET "\x1b[0m"
 
+#define LIKELY(x)   __builtin_expect(!!(x), 1)
+#define UNLIKELY(x) __builtin_expect(!!(x), 0)
+
 typedef struct __attribute__((packed)) Cell_s {
     char value;
     size_t isImmutable:1;    
@@ -86,7 +89,7 @@ fclose(file);
 /*
 Cell* GetCellPtr(Game *game, size_t i, size_t j)
 {
-    if(i<game->size && j<game->size)
+    if(LIKELY(i<game->size && j<game->size))
         return &game->array[i * game->size + j];
     return 0;
 }
@@ -191,7 +194,7 @@ size_t AdjacentPairRule(Game* game)
         for (size_t j = 0; j < game->size; j++)
         {
             Cell* cell = GetCellPtr(game, i, j);
-            if (cell->value == ' ' || cell->value == 0) continue;
+            if (UNLIKELY(cell->value == ' ' || cell->value == 0)) continue;
 
             Cell* cells[5][2] = {
                 {cell, NULL},
@@ -207,13 +210,13 @@ size_t AdjacentPairRule(Game* game)
                 if (!c1 || !c2) continue;
                 char opposite = c == '0' ? '1' : '0';
                 /* 00_ / _00 */
-                if (c == c1->value && !c2->isImmutable && (c2->value == ' ' || c2->value == 0))
+                if (UNLIKELY(c == c1->value && !c2->isImmutable && (c2->value == ' ' || c2->value == 0)))
                 {
                     c2->value = opposite;
                     somethingChangedHere = 1;
                 }
                 /* 0_0 / 1_1 */
-                if (c == c2->value && !c1->isImmutable && (c1->value == ' ' || c1->value == 0))
+                if (UNLIKELY(c == c2->value && !c1->isImmutable && (c1->value == ' ' || c1->value == 0)))
                 {
                     c1->value = opposite;
                     somethingChangedHere = 1;
@@ -250,7 +253,7 @@ size_t QuotaExhausted(Game* game)
                     }
                 }
             }
-            if(n0 == game->size/2 && n1 != game->size/2)
+            if(UNLIKELY(n0 == game->size/2 && n1 != game->size/2))
             {
                 for(size_t k = 0; k < add_idx; k++)
                 {
@@ -258,7 +261,7 @@ size_t QuotaExhausted(Game* game)
                     somethingChangedHere = 1;
                 }
             }
-            if(n1 == game->size/2 && n0 != game->size/2)
+            if(UNLIKELY(n1 == game->size/2 && n0 != game->size/2))
             {
                 for(size_t k = 0; k < add_idx; k++)
                 {
@@ -291,7 +294,7 @@ void EvidentSolve(Game* game)
         for (size_t i = 0; rules[i] != NULL; ++i) {
             somethingChanged |= rules[i](game);
         }
-    } while (somethingChanged);
+    } while (LIKELY(somethingChanged));
     clock_t end = clock();
     double time_spent = ((double)(end - start)) / CLOCKS_PER_SEC * 1000000; // Convert to microseconds
     printf("Solved in %.0f micro seconds\n", time_spent);
@@ -410,16 +413,16 @@ size_t checkWin(Game* game)
 
 int main(void)
 {
-    Game game = LoadLevel("lvl1.binero"); // [CB]: InitGame(14);|LoadLevel("lvl1.binero");
+    Game game = LoadLevel("levels/lvl1.binero"); // [CB]: InitGame(14);|LoadLevel("levels/lvl1.binero");|LoadLevel("levels/lvl2.binero");
 
     enableRawMode();
     
     while (1) {
         /* move cursor home, clear screen and scrollback to avoid stacking output */
-        char clearScreen[] = "\x1b[H\x1b[2J"; //[CB]: "\x1b[H\x1b[2J\x1b[3J";|"\x1b[H\x1b[2J";
+        char clearScreen[] = "\x1b[H\x1b[2J\x1b[3J\n\n"; //[CB]: "\x1b[H\x1b[2J\x1b[3J\n\n";|"\x1b[H\x1b[2J\n\n";
         printf("%s", clearScreen);
         PrintGame(&game);
-        printf("Flèches: nav | 'a'->'0' | 'e'->'1' | 'r': clear | 'c': commit | 'q': quitter\n");
+        printf("Flèches: nav|'a'/'e'->'0'/'1'|'r'emove | 'c'ommit | 'q'uit\n");
         
         char c;
         ssize_t n = read(STDIN_FILENO, &c, 1);
