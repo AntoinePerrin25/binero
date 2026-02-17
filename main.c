@@ -93,7 +93,7 @@ Cell* GetCellPtr(Game *game, size_t i, size_t j)
 void PrintGame(Game* game)
 {
     /* header */
-    printf("    ");
+    printf("   ");
     for (size_t j = 0; j < game->size; j++) {
         printf(" %c", 'a' + (char)j);
     }
@@ -275,7 +275,7 @@ size_t next(Game* game)
 
 typedef size_t (*Rule)(Game*);
 
-void solve(Game* game)
+void EvidentSolve(Game* game)
 {
     Rule rules[] = { AdjacentPairRule, QuotaExhausted, NULL };
 
@@ -428,7 +428,7 @@ int main(void)
         // AdjacentPairRule, QuotaExhausted
         else if (c == 38) AdjacentPairRule(&game); // &
         else if (c == 34) QuotaExhausted(&game); // "
-        else if (c == 's') solve(&game); 
+        else if (c == 's') EvidentSolve(&game); 
         else if (c == '\x1b') { /* escape sequence */
             char seq[2];
             if (read(STDIN_FILENO, &seq[0], 1) <= 0) continue;
