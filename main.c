@@ -28,6 +28,46 @@ typedef struct __attribute__((packed)) Game_s {
     size_t selected;
 } Game;
 
+/* Debug: solution reference for solver validation */
+static char *g_solution = NULL;
+static size_t g_solution_size = 0;
+
+void LoadSolution(const char *path, size_t size)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) { printf("No solution file: %s\n", path); return; }
+    g_solution_size = size;
+    g_solution = malloc(size * size);
+    for (size_t i = 0; i < size; i++) {
+        for (size_t j = 0; j < size; j++) {
+            char byte;
+            do { byte = fgetc(f); } while (byte == '\n');
+            if (byte == EOF) { fclose(f); free(g_solution); g_solution = NULL; return; }
+            g_solution[i * size + j] = byte;
+        }
+    }
+    fclose(f);
+}
+
+void FreeSolution(void)
+{
+    free(g_solution);
+    g_solution = NULL;
+}
+
+/* Check a cell write against the solution. Call from solver rules. */
+static inline void debugCheckCell(Game *game, size_t idx, char newVal, const char *ruleName)
+{
+    if (!g_solution) return;
+    char expected = g_solution[idx];
+    if (newVal != expected) {
+        size_t row = idx / game->size;
+        size_t col = idx % game->size;
+        printf("\x1b[31m[BUG] %s: cell (%zu,%zu) set to '%c' but solution expects '%c'\x1b[0m\n",
+               ruleName, row, col, newVal, expected);
+    }
+}
+
 Game InitGame(size_t size)
 {
     Game game = {
@@ -212,12 +252,14 @@ size_t AdjacentPairRule(Game* game)
                 /* 00_ / _00 */
                 if (UNLIKELY(c == c1->value && !c2->isImmutable && (c2->value == ' ' || c2->value == 0)))
                 {
+                    debugCheckCell(game, (size_t)(c2 - game->array), opposite, "AdjacentPair(00_)");
                     c2->value = opposite;
                     somethingChangedHere = 1;
                 }
                 /* 0_0 / 1_1 */
                 if (UNLIKELY(c == c2->value && !c1->isImmutable && (c1->value == ' ' || c1->value == 0)))
                 {
+                    debugCheckCell(game, (size_t)(c1 - game->array), opposite, "AdjacentPair(0_0)");
                     c1->value = opposite;
                     somethingChangedHere = 1;
                 }
@@ -237,7 +279,7 @@ size_t QuotaExhausted(Game* game)
         for (size_t i = 0; i < game->size; i++)
         {
             size_t n0 = 0, n1 = 0;
-            char** addresses = alloca(game->size/2 * sizeof(char*));
+            size_t* indices = alloca(game->size/2 * sizeof(size_t));
             size_t add_idx = 0;
             for (size_t j = 0; j < game->size; j++)
             {
@@ -248,7 +290,7 @@ size_t QuotaExhausted(Game* game)
                 {
                     if (add_idx != game->size/2)
                     {
-                        addresses[add_idx++] = &game->array[idx].value;
+                        indices[add_idx++] = idx;
                         continue;
                     }
                 }
@@ -257,7 +299,8 @@ size_t QuotaExhausted(Game* game)
             {
                 for(size_t k = 0; k < add_idx; k++)
                 {
-                    *addresses[k] = '1';
+                    debugCheckCell(game, indices[k], '1', "QuotaExhausted(fill1)");
+                    game->array[indices[k]].value = '1';
                     somethingChangedHere = 1;
                 }
             }
@@ -265,7 +308,8 @@ size_t QuotaExhausted(Game* game)
             {
                 for(size_t k = 0; k < add_idx; k++)
                 {
-                    *addresses[k] = '0';
+                    debugCheckCell(game, indices[k], '0', "QuotaExhausted(fill0)");
+                    game->array[indices[k]].value = '0';
                     somethingChangedHere = 1;
                 }
             }
@@ -300,9 +344,55 @@ void EvidentSolve(Game* game)
     printf("Solved in %.0f micro seconds\n", time_spent);
 }
 
+Game CloneGame(const Game *src)
+{
+    Game g = { .size = src->size, .array = malloc(src->size * src->size * sizeof(Cell)), .selected = 0 };
+    if (!g.array) { perror("malloc"); exit(EXIT_FAILURE); }
+    memcpy(g.array, src->array, src->size * src->size * sizeof(Cell));
+    return g;
+}
+
+
+#define da_append(xs, x)                                                             \
+    do {                                                                             \
+        if ((xs)->count >= (xs)->capacity) {                                         \
+            if ((xs)->capacity == 0) (xs)->capacity = 256;                           \
+            else (xs)->capacity *= 2;                                                \
+            (xs)->items = realloc((xs)->items, (xs)->capacity*sizeof(*(xs)->items)); \
+        }                                                                            \
+                                                                                     \
+        (xs)->items[(xs)->count++] = (x);                                            \
+    } while (0)
+
+typedef struct {
+    int *items;
+    size_t count;
+    size_t capacity;
+} Indexes;
+
 void Solve(Game* game)
 {
+    // Make a copy to work on
+    Game myGame = CloneGame(game);
+    EvidentSolve(&myGame);
+
+    // Get Every empty cell idx and make a DA of it
+    Indexes emptyCells = {0};
+    for (size_t i = 0; i < myGame.size * myGame.size; i++) {
+        if (myGame.array[i].value == ' ' || myGame.array[i].value == 0) {
+            da_append(&emptyCells, (int)i);
+        }
+    }
+
+
+
+
 }
+
+#define NOT_FINISHED 0
+#define WIN 1
+#define IMPOSSIBLE 2
+
 
 size_t checkWin(Game* game)
 {
@@ -439,13 +529,14 @@ size_t checkWin(Game* game)
 
 int main(void)
 {
-    Game game = InitGame(14); // [CB]: InitGame(14);|LoadLevel("levels/lvl1.binero");|LoadLevel("levels/lvl2.binero");
+    Game game = LoadLevel("levels/lvl1.binero"); // [CB]: InitGame(14);|LoadLevel("levels/lvl1.binero");|LoadLevel("levels/lvl2.binero");
+    LoadSolution("levels/lvl1.binero.sol", game.size);
 
     enableRawMode();
     
     while (1) {
         /* move cursor home, clear screen and scrollback to avoid stacking output */
-        char clearScreen[] = "\x1b[H\x1b[2J\x1b[3J\n\n"; //[CB]: "\x1b[H\x1b[2J\x1b[3J\n\n";|"\x1b[H\x1b[2J\n\n";
+        char clearScreen[] = "\x1b[H\x1b[2J\n\n"; //[CB]: "\x1b[H\x1b[2J\x1b[3J\n\n";|"\x1b[H\x1b[2J\n\n";
         printf("%s", clearScreen);
         PrintGame(&game);
         printf("Flèches: nav|'a'/'e'->'0'/'1'|'r'emove | 'c'ommit | 'q'uit\n");
@@ -486,6 +577,7 @@ int main(void)
         }
     }
     
+    FreeSolution();
     FreeGame(&game);
 
     return 0;
