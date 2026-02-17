@@ -508,19 +508,116 @@ cleanup:
 }
 
 
+#include <dirent.h>
+
+void ExportLevel(Game *game)
+{
+    /* Temporarily disable raw mode to read filename */
+    disableRawMode();
+    printf("\nNom du niveau (sans extension): ");
+    fflush(stdout);
+
+    char name[128] = {0};
+    if (fgets(name, sizeof(name), stdin) == NULL || name[0] == '\n') {
+        printf("Export annulé.\n");
+        enableRawMode();
+        return;
+    }
+    /* Strip trailing newline */
+    name[strcspn(name, "\n")] = '\0';
+
+    char path[256];
+    snprintf(path, sizeof(path), "levels/%s.binero", name);
+
+    FILE *f = fopen(path, "wb");
+    if (!f) {
+        printf("Erreur: %s\n", strerror(errno));
+        enableRawMode();
+        return;
+    }
+    for (size_t i = 0; i < game->size; i++) {
+        for (size_t j = 0; j < game->size; j++) {
+            char v = game->array[i * game->size + j].value;
+            fputc((v == '0' || v == '1') ? v : ' ', f);
+        }
+        if (i < game->size - 1) fputc('\n', f);
+    }
+    fclose(f);
+    printf("Exporté vers %s\n", path);
+    enableRawMode();
+}
+
+Game SelectLevel(void)
+{
+    /* Scan levels/ directory for .binero files */
+    const char *levelsDir = "levels";
+    char paths[64][256];
+    size_t count = 0;
+
+    DIR *dir = opendir(levelsDir);
+    if (dir) {
+        struct dirent *ent;
+        while ((ent = readdir(dir)) != NULL && count < 64) {
+            size_t len = strlen(ent->d_name);
+            if (len > 7 && strcmp(ent->d_name + len - 7, ".binero") == 0
+                && strcmp(ent->d_name + len - 11, ".binero.sol") != 0) {
+                snprintf(paths[count], sizeof(paths[count]), "%s/%s", levelsDir, ent->d_name);
+                count++;
+            }
+        }
+        closedir(dir);
+    }
+
+    /* Sort alphabetically */
+    for (size_t i = 0; i < count; i++)
+        for (size_t j = i + 1; j < count; j++)
+            if (strcmp(paths[i], paths[j]) > 0) {
+                char tmp[256];
+                memcpy(tmp, paths[i], 256);
+                memcpy(paths[i], paths[j], 256);
+                memcpy(paths[j], tmp, 256);
+            }
+
+    printf("\x1b[H\x1b[2J");
+    printf("=== BINERO ===\n\n");
+    for (size_t i = 0; i < count; i++)
+        printf("  %zu) %s\n", i + 1, paths[i]);
+    printf("  0) Grille vide 14x14\n");
+    printf("\nChoix: ");
+    fflush(stdout);
+
+    /* Read choice (raw mode is not enabled yet) */
+    char buf[16] = {0};
+    if (fgets(buf, sizeof(buf), stdin) == NULL) buf[0] = '0';
+    int choice = atoi(buf);
+
+    if (choice >= 1 && choice <= (int)count) {
+        Game game = LoadLevel(paths[choice - 1]);
+
+        /* Try to load matching .sol file */
+        char solPath[270];
+        snprintf(solPath, sizeof(solPath), "%s.sol", paths[choice - 1]);
+        LoadSolution(solPath, game.size);
+
+        return game;
+    }
+
+    return InitGame(14);
+}
+
 int main(void)
 {
-    Game game = LoadLevel("levels/lvl2.binero"); // [CB]: InitGame(14);|LoadLevel("levels/lvl1.binero");|LoadLevel("levels/lvl2.binero");
-    //LoadSolution("levels/lvl1.binero.sol", game.size);
+    Game game = SelectLevel();
 
     enableRawMode();
+
     
     while (1) {
         /* move cursor home, clear screen and scrollback to avoid stacking output */
         char clearScreen[] = "\x1b[H\x1b[2J\n\n"; //[CB]: "\x1b[H\x1b[2J\x1b[3J\n\n";|"\x1b[H\x1b[2J\n\n";
         printf("%s", clearScreen);
         PrintGame(&game);
-        printf("Flèches: nav|'a'/'e'->'0'/'1'|'r'emove | 'c'ommit | 'q'uit\n");
+        printf("Flèches: nav|'a'/'e'->'0'/'1'|'r'emove | 'c'ommit | 'x'port | 'q'uit\n");
         char win = 0;
         char c;
         ssize_t n = read(STDIN_FILENO, &c, 1);
@@ -535,6 +632,7 @@ int main(void)
         else if (c == -87) QuotaExhausted(&game); // é
         else if (c == 's') EvidentSolve(&game);
         else if (c == 'S') Solve(&game);
+        else if (c == 'x') ExportLevel(&game);
         else if (c == 'w') win = checkWin(&game);
         else if (c == '\x1b') { /* escape sequence */
             char seq[2];
@@ -559,7 +657,7 @@ int main(void)
         }
     }
     
-    //FreeSolution();
+    FreeSolution();
     FreeGame(&game);
 
     return 0;
