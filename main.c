@@ -402,129 +402,75 @@ size_t checkWin(Game* game)
         if (game->array[i].value == ' ' || game->array[i].value == 0)
         {
             printf("Cell %zu is empty\n", i);
-            return 0;
+            return NOT_FINISHED;
         }
     }
-    
-    // Check rows
-    for (size_t i = 0; i < game->size; i++)
+
+    for (size_t dir = 0; dir < 2; dir++)
     {
-        size_t count0 = 0, count1 = 0;
-        
-        // Count 0s and 1s in row i
-        for (size_t j = 0; j < game->size; j++)
-        {
-            Cell* cell = GetCellPtr(game, i, j);
-            if (cell->value == '0') count0++;
-            else if (cell->value == '1') count1++;
-        }
-        
-        // Each row must have equal 0s and 1s
-        if (count0 != game->size / 2 || count1 != game->size / 2)
-        {
-            printf("Row %zu does not have equal 0s and 1s\n", i);
-            return 0;
-        }
-        
-        // Check for three consecutive identical values in row
-        for (size_t j = 0; j < game->size - 2; j++)
-        {
-            Cell* c1 = GetCellPtr(game, i, j);
-            Cell* c2 = GetCellPtr(game, i, j + 1);
-            Cell* c3 = GetCellPtr(game, i, j + 2);
-            if (c1->value == c2->value && c2->value == c3->value)
-            {
-                printf("Row %zu has three consecutive '%c'\n", i, c1->value);
-                return 0;
-            }
-        }
-    }
-    
-    // Check columns
-    for (size_t j = 0; j < game->size; j++)
-    {
-        size_t count0 = 0, count1 = 0;
-        
-        // Count 0s and 1s in column j
         for (size_t i = 0; i < game->size; i++)
         {
-            Cell* cell = GetCellPtr(game, i, j);
-            if (cell->value == '0') count0++;
-            else if (cell->value == '1') count1++;
-        }
-        
-        // Each column must have equal 0s and 1s
-        if (count0 != game->size / 2 || count1 != game->size / 2)
-        {
-            printf("Column %zu does not have equal 0s and 1s\n", j);
-            return 0;
-        }
-        
-        // Check for three consecutive identical values in column
-        for (size_t i = 0; i < game->size - 2; i++)
-        {
-            Cell* c1 = GetCellPtr(game, i, j);
-            Cell* c2 = GetCellPtr(game, i + 1, j);
-            Cell* c3 = GetCellPtr(game, i + 2, j);
-            if (c1->value == c2->value && c2->value == c3->value)
-            {
-                printf("Column %zu has three consecutive '%c'\n", j, c1->value);
-                return 0;
-            }
-        }
-    }
-    
-    // Check all rows are unique
-    for (size_t i1 = 0; i1 < game->size; i1++)
-    {
-        for (size_t i2 = i1 + 1; i2 < game->size; i2++)
-        {
-            size_t identical = 1;
+            size_t count0 = 0, count1 = 0;
+
             for (size_t j = 0; j < game->size; j++)
             {
-                Cell* cell1 = GetCellPtr(game, i1, j);
-                Cell* cell2 = GetCellPtr(game, i2, j);
-                if (cell1->value != cell2->value)
+                size_t idx = dir == 0 ? i * game->size + j : j * game->size + i;
+                if (game->array[idx].value == '0') count0++;
+                else if (game->array[idx].value == '1') count1++;
+
+                // Check for three consecutive identical values
+                if (j >= 2)
                 {
-                    identical = 0;
-                    break;
+                    size_t idx1 = dir == 0 ? i * game->size + (j-2) : (j-2) * game->size + i;
+                    size_t idx2 = dir == 0 ? i * game->size + (j-1) : (j-1) * game->size + i;
+                    if (game->array[idx1].value == game->array[idx2].value &&
+                        game->array[idx2].value == game->array[idx].value)
+                    {
+                        printf("%s %zu has three consecutive '%c'\n",
+                               dir == 0 ? "Row" : "Column", i, game->array[idx].value);
+                        return IMPOSSIBLE;
+                    }
                 }
             }
-            if (identical)
+
+            if (count0 != game->size / 2 || count1 != game->size / 2)
             {
-                printf("Rows %zu and %zu are identical\n", i1, i2);
-                return 0;
+                printf("%s %zu does not have equal 0s and 1s\n",
+                       dir == 0 ? "Row" : "Column", i);
+                return IMPOSSIBLE;
+            }
+            else if (count0 + count1 != game->size)
+            {
+                printf("%s %zu has empty cells\n", dir == 0 ? "Row" : "Column", i);
+                return NOT_FINISHED;
+            }
+
+            // Check uniqueness against all subsequent rows/columns
+            for (size_t i2 = i + 1; i2 < game->size; i2++)
+            {
+                size_t identical = 1;
+                for (size_t j = 0; j < game->size; j++)
+                {
+                    size_t idx1 = dir == 0 ? i * game->size + j : j * game->size + i;
+                    size_t idx2 = dir == 0 ? i2 * game->size + j : j * game->size + i2;
+                    if (game->array[idx1].value != game->array[idx2].value)
+                    {
+                        identical = 0;
+                        break;
+                    }
+                }
+                if (identical)
+                {
+                    printf("%s %zu and %zu are identical\n",
+                           dir == 0 ? "Rows" : "Columns", i, i2);
+                    return IMPOSSIBLE;
+                }
             }
         }
     }
-    
-    // Check all columns are unique
-    for (size_t j1 = 0; j1 < game->size; j1++)
-    {
-        for (size_t j2 = j1 + 1; j2 < game->size; j2++)
-        {
-            size_t identical = 1;
-            for (size_t i = 0; i < game->size; i++)
-            {
-                Cell* cell1 = GetCellPtr(game, i, j1);
-                Cell* cell2 = GetCellPtr(game, i, j2);
-                if (cell1->value != cell2->value)
-                {
-                    identical = 0;
-                    break;
-                }
-            }
-            if (identical)
-            {
-                printf("Columns %zu and %zu are identical\n", j1, j2);
-                return 0;
-            }
-        }
-    }
-    
-    // All checks passed - game is won!
+
     printf("Congratulations! You've won the game!\n");
-    return 1;
+    return WIN;
 }
 
 int main(void)
@@ -570,7 +516,7 @@ int main(void)
         else {
             printf("Touche non reconnue: %d\n", c);
         }
-        if (win) {
+        if (win == WIN) {
             printf("Press any key to exit...\n");
             read(STDIN_FILENO, &c, 1);
             break;
