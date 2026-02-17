@@ -31,6 +31,7 @@ typedef struct __attribute__((packed)) Game_s {
 /* Debug: solution reference for solver validation */
 static char *g_solution = NULL;
 static size_t g_solution_size = 0;
+size_t PrintAndDebug = 0; //[CB]: 0;|1;
 
 void LoadSolution(const char *path, size_t size)
 {
@@ -58,6 +59,7 @@ void FreeSolution(void)
 /* Check a cell write against the solution. Call from solver rules. */
 static inline void debugCheckCell(Game *game, size_t idx, char newVal, const char *ruleName)
 {
+    if (!PrintAndDebug) return;
     if (!g_solution) return;
     char expected = g_solution[idx];
     if (newVal != expected) {
@@ -341,7 +343,8 @@ void EvidentSolve(Game* game)
     } while (LIKELY(somethingChanged));
     clock_t end = clock();
     double time_spent = ((double)(end - start)) / CLOCKS_PER_SEC * 1000000; // Convert to microseconds
-    printf("Solved in %.0f micro seconds\n", time_spent);
+    if(PrintAndDebug)
+        printf("Solved in %.0f micro seconds\n", time_spent);
 }
 
 Game CloneGame(const Game *src)
@@ -364,30 +367,15 @@ Game CloneGame(const Game *src)
         (xs)->items[(xs)->count++] = (x);                                            \
     } while (0)
 
+#define da_free(da) free((da)->items)
+#define nob_da_foreach(Type, it, da) for (Type *it = (da)->items; it < (da)->items + (da)->count; ++it)
+
 typedef struct {
     int *items;
     size_t count;
     size_t capacity;
 } Indexes;
 
-void Solve(Game* game)
-{
-    // Make a copy to work on
-    Game myGame = CloneGame(game);
-    EvidentSolve(&myGame);
-
-    // Get Every empty cell idx and make a DA of it
-    Indexes emptyCells = {0};
-    for (size_t i = 0; i < myGame.size * myGame.size; i++) {
-        if (myGame.array[i].value == ' ' || myGame.array[i].value == 0) {
-            da_append(&emptyCells, (int)i);
-        }
-    }
-
-
-
-
-}
 
 #define NOT_FINISHED 0
 #define WIN 1
@@ -401,7 +389,8 @@ size_t checkWin(Game* game)
     {
         if (game->array[i].value == ' ' || game->array[i].value == 0)
         {
-            printf("Cell %zu is empty\n", i);
+            if(PrintAndDebug)
+                printf("Cell %zu is empty\n", i);
             return NOT_FINISHED;
         }
     }
@@ -426,8 +415,9 @@ size_t checkWin(Game* game)
                     if (game->array[idx1].value == game->array[idx2].value &&
                         game->array[idx2].value == game->array[idx].value)
                     {
-                        printf("%s %zu has three consecutive '%c'\n",
-                               dir == 0 ? "Row" : "Column", i, game->array[idx].value);
+                        if(PrintAndDebug)
+                            printf("%s %zu has three consecutive '%c'\n",
+                                dir == 0 ? "Row" : "Column", i, game->array[idx].value);
                         return IMPOSSIBLE;
                     }
                 }
@@ -435,13 +425,14 @@ size_t checkWin(Game* game)
 
             if (count0 != game->size / 2 || count1 != game->size / 2)
             {
-                printf("%s %zu does not have equal 0s and 1s\n",
-                       dir == 0 ? "Row" : "Column", i);
+                if(PrintAndDebug)
+                    printf("%s %zu does not have equal 0s and 1s\n", dir == 0 ? "Row" : "Column", i);
                 return IMPOSSIBLE;
             }
             else if (count0 + count1 != game->size)
             {
-                printf("%s %zu has empty cells\n", dir == 0 ? "Row" : "Column", i);
+                if(PrintAndDebug)
+                    printf("%s %zu has empty cells\n", dir == 0 ? "Row" : "Column", i);
                 return NOT_FINISHED;
             }
 
@@ -461,22 +452,66 @@ size_t checkWin(Game* game)
                 }
                 if (identical)
                 {
-                    printf("%s %zu and %zu are identical\n",
-                           dir == 0 ? "Rows" : "Columns", i, i2);
+                    if(PrintAndDebug)
+                        printf("%s %zu and %zu are identical\n", dir == 0 ? "Rows" : "Columns", i, i2);
                     return IMPOSSIBLE;
                 }
             }
         }
     }
-
-    printf("Congratulations! You've won the game!\n");
     return WIN;
 }
 
+
+void Solve(Game* game)
+{
+    // Make a copy to work on
+    Game myGame = CloneGame(game);
+    EvidentSolve(&myGame);
+
+    // Get Every empty cell idx and make a DA of it
+    Indexes emptyCells = {0};
+    for (size_t i = 0; i < myGame.size * myGame.size; i++) {
+        if (myGame.array[i].value == ' ' || myGame.array[i].value == 0) {
+            da_append(&emptyCells, (int)i);
+        }
+    }
+
+
+    // If EvidentSolve already solved it, copy back and return
+    if (emptyCells.count == 0) {
+        if (checkWin(&myGame) == WIN) {
+            memcpy(game->array, myGame.array, myGame.size * myGame.size * sizeof(Cell));
+        }
+        goto cleanup;
+    }
+
+    // Try '0' and '1' on the first empty cell and recurse
+    else
+    {
+        size_t idx = (size_t)emptyCells.items[0];
+        for (char val = '0'; val <= '1'; val++) {
+            Game tryGame = CloneGame(&myGame);
+            tryGame.array[idx].value = val;
+            Solve(&tryGame);
+            if (checkWin(&tryGame) == WIN) {
+                memcpy(game->array, tryGame.array, tryGame.size * tryGame.size * sizeof(Cell));
+                FreeGame(&tryGame);
+                goto cleanup;
+            }
+            FreeGame(&tryGame);
+        }
+    }
+cleanup:
+    free(emptyCells.items);
+    FreeGame(&myGame);
+}
+
+
 int main(void)
 {
-    Game game = LoadLevel("levels/lvl1.binero"); // [CB]: InitGame(14);|LoadLevel("levels/lvl1.binero");|LoadLevel("levels/lvl2.binero");
-    LoadSolution("levels/lvl1.binero.sol", game.size);
+    Game game = LoadLevel("levels/lvl2.binero"); // [CB]: InitGame(14);|LoadLevel("levels/lvl1.binero");|LoadLevel("levels/lvl2.binero");
+    //LoadSolution("levels/lvl1.binero.sol", game.size);
 
     enableRawMode();
     
@@ -517,13 +552,14 @@ int main(void)
             printf("Touche non reconnue: %d\n", c);
         }
         if (win == WIN) {
+            printf("Congratulations! You've won the game!\n");
             printf("Press any key to exit...\n");
             read(STDIN_FILENO, &c, 1);
             break;
         }
     }
     
-    FreeSolution();
+    //FreeSolution();
     FreeGame(&game);
 
     return 0;
