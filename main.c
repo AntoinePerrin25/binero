@@ -300,13 +300,20 @@ void EvidentSolve(Game* game)
     printf("Solved in %.0f micro seconds\n", time_spent);
 }
 
+void Solve(Game* game)
+{
+}
+
 size_t checkWin(Game* game)
 {
     // Check if all cells are filled
     for (size_t i = 0; i < game->size * game->size; i++)
     {
         if (game->array[i].value == ' ' || game->array[i].value == 0)
+        {
+            printf("Cell %zu is empty\n", i);
             return 0;
+        }
     }
     
     // Check rows
@@ -324,7 +331,10 @@ size_t checkWin(Game* game)
         
         // Each row must have equal 0s and 1s
         if (count0 != game->size / 2 || count1 != game->size / 2)
+        {
+            printf("Row %zu does not have equal 0s and 1s\n", i);
             return 0;
+        }
         
         // Check for three consecutive identical values in row
         for (size_t j = 0; j < game->size - 2; j++)
@@ -333,7 +343,10 @@ size_t checkWin(Game* game)
             Cell* c2 = GetCellPtr(game, i, j + 1);
             Cell* c3 = GetCellPtr(game, i, j + 2);
             if (c1->value == c2->value && c2->value == c3->value)
+            {
+                printf("Row %zu has three consecutive '%c'\n", i, c1->value);
                 return 0;
+            }
         }
     }
     
@@ -352,7 +365,10 @@ size_t checkWin(Game* game)
         
         // Each column must have equal 0s and 1s
         if (count0 != game->size / 2 || count1 != game->size / 2)
+        {
+            printf("Column %zu does not have equal 0s and 1s\n", j);
             return 0;
+        }
         
         // Check for three consecutive identical values in column
         for (size_t i = 0; i < game->size - 2; i++)
@@ -361,7 +377,10 @@ size_t checkWin(Game* game)
             Cell* c2 = GetCellPtr(game, i + 1, j);
             Cell* c3 = GetCellPtr(game, i + 2, j);
             if (c1->value == c2->value && c2->value == c3->value)
+            {
+                printf("Column %zu has three consecutive '%c'\n", j, c1->value);
                 return 0;
+            }
         }
     }
     
@@ -382,7 +401,10 @@ size_t checkWin(Game* game)
                 }
             }
             if (identical)
+            {
+                printf("Rows %zu and %zu are identical\n", i1, i2);
                 return 0;
+            }
         }
     }
     
@@ -403,17 +425,21 @@ size_t checkWin(Game* game)
                 }
             }
             if (identical)
+            {
+                printf("Columns %zu and %zu are identical\n", j1, j2);
                 return 0;
+            }
         }
     }
     
     // All checks passed - game is won!
+    printf("Congratulations! You've won the game!\n");
     return 1;
 }
 
 int main(void)
 {
-    Game game = LoadLevel("levels/lvl1.binero"); // [CB]: InitGame(14);|LoadLevel("levels/lvl1.binero");|LoadLevel("levels/lvl2.binero");
+    Game game = InitGame(14); // [CB]: InitGame(14);|LoadLevel("levels/lvl1.binero");|LoadLevel("levels/lvl2.binero");
 
     enableRawMode();
     
@@ -423,7 +449,7 @@ int main(void)
         printf("%s", clearScreen);
         PrintGame(&game);
         printf("Flèches: nav|'a'/'e'->'0'/'1'|'r'emove | 'c'ommit | 'q'uit\n");
-        
+        char win = 0;
         char c;
         ssize_t n = read(STDIN_FILENO, &c, 1);
         if (n <= 0) break;
@@ -433,10 +459,11 @@ int main(void)
         else if (c == 'e') setCellValue(&game, '1');
         else if (c == 'r') setCellValue(&game, ' ');
         else if (c == 'c') commitValues(&game);
-        // AdjacentPairRule, QuotaExhausted
-        else if (c == 38) AdjacentPairRule(&game); // &
-        else if (c == 34) QuotaExhausted(&game); // "
-        else if (c == 's') EvidentSolve(&game); 
+        else if (c == '&') AdjacentPairRule(&game); // &
+        else if (c == -87) QuotaExhausted(&game); // é
+        else if (c == 's') EvidentSolve(&game);
+        else if (c == 'S') Solve(&game);
+        else if (c == 'w') win = checkWin(&game);
         else if (c == '\x1b') { /* escape sequence */
             char seq[2];
             if (read(STDIN_FILENO, &seq[0], 1) <= 0) continue;
@@ -449,9 +476,14 @@ int main(void)
                 else if (seq[1] == 'D') moveSelection(&game, -1, 0); /* left */
             }
         }
-        // else {
-        //     printf("Touche non reconnue: %d\n", c);
-        // }
+        else {
+            printf("Touche non reconnue: %d\n", c);
+        }
+        if (win) {
+            printf("Press any key to exit...\n");
+            read(STDIN_FILENO, &c, 1);
+            break;
+        }
     }
     
     FreeGame(&game);
