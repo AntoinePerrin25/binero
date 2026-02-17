@@ -260,98 +260,93 @@ size_t FillTheHole(Game* game)
 
 size_t QuotaExhausted(Game* game)
 {
-    // for each line and each value, count -> 6/7 -> .
     size_t somethingChangedHere = 0;
     size_t n0;
     size_t n1;
+
+    // Analyzing Lines
     for (size_t i = 0; i < game->size; i++)
     {
         n0 = 0;
         n1 = 0;
-        char* lastVoid = 0;
-        char* secondLastVoid = 0;
+        char* addresses[7] = {0};
+        size_t add_idx = 0;
         for (size_t j = 0; j < game->size; j++)
         {
             size_t idx = i * game->size + j;
             if(game->array[idx].value == '0') n0++;   
             if(game->array[idx].value == '1') n1++;   
-            if(game->array[idx].value == ' ' && !lastVoid)
+            if(game->array[idx].value == ' ' || game->array[idx].value == 0)
             {
-                lastVoid = &game->array[idx].value;
-                continue;
+                if (add_idx != game->size/2)
+                {
+                    addresses[add_idx++] = &game->array[idx].value;
+                    continue;
+                }
             }   
-            if(game->array[idx].value == ' ' && lastVoid) secondLastVoid = &game->array[idx].value;   
         }
-        
-        // 13 : 6/7 // 7/6
-        if (lastVoid &&
-            ((n0 == game->size/2 - 1 &&
-            n1 == game->size/2) ||
-            (n1 == game->size/2 - 1 &&
-            n0 == game->size/2))
-        )
+        // 7/x
+        if(n0 == game->size/2 && n1 != game->size/2)
         {
-            *lastVoid = n0 == 6 ? '0' : '1';
-            somethingChangedHere = 1;
+            for(size_t i = 0; i < add_idx; i++)
+            {
+                *addresses[i] = '1';
+                somethingChangedHere = 1;
+            }
         }
-        // 12 : 5/7 // 7/5
-        if (lastVoid && secondLastVoid &&
-            ((n0 == game->size/2 - 2 &&
-            n1 == game->size/2) ||
-            (n1 == game->size/2 - 2 &&
-            n0 == game->size/2))
-        )
+        // x/7
+        if(n1 == game->size/2 && n0 != game->size/2)
         {
-            char c = n0 == 5 ? '0' : '1';
-            *lastVoid = c;
-            *secondLastVoid = c;
-            somethingChangedHere = 1;
+            for(size_t i = 0; i < add_idx; i++)
+            {
+                *addresses[i] = '0';
+                somethingChangedHere = 1;
+            }
         }
     }
 
+    // Analyzing Columns
     for (size_t j = 0; j < game->size; j++)
     {
         n0 = 0;
         n1 = 0;
-        char* lastVoid = 0;
-        char* secondLastVoid = 0;
+        char* addresses[7] = {0};
+        size_t add_idx = 0;
         for (size_t i = 0; i < game->size; i++)
         {
             size_t idx = i * game->size + j;
             if(game->array[idx].value == '0') n0++;   
             if(game->array[idx].value == '1') n1++;   
-            if(game->array[idx].value == ' ' && !lastVoid)
+            if(game->array[idx].value == ' ' || game->array[idx].value == 0)
             {
-                lastVoid = &game->array[idx].value;
-                continue;
+                if (add_idx != game->size/2)
+                {
+                    addresses[add_idx++] = &game->array[idx].value;
+                    continue;
+                }
             }   
-            if(game->array[idx].value == ' ' && lastVoid) secondLastVoid = &game->array[idx].value;   
         }
-        // 13 : 6/7 // 7/6
-        if (lastVoid &&
-            ((n0 == game->size/2 - 1 &&
-            n1 == game->size/2) ||
-            (n1 == game->size/2 - 1 &&
-            n0 == game->size/2))
-        )
+        // 7/x
+        if(n0 == game->size/2 && n1 != game->size/2)
         {
-            *lastVoid = n0 == 6 ? '0' : '1';
-            somethingChangedHere = 1;
+            for(size_t i = 0; i < add_idx; i++)
+            {
+                *addresses[i] = '1';
+                somethingChangedHere = 1;
+            }
         }
-        // 12 : 5/7 // 7/5
-        if (lastVoid && secondLastVoid &&
-            ((n0 == game->size/2 - 2 &&
-            n1 == game->size/2) ||
-            (n1 == game->size/2 - 2 &&
-            n0 == game->size/2))
-        )
+        // x/7
+        if(n1 == game->size/2 && n0 != game->size/2)
         {
-            char c = n0 == 5 ? '0' : '1';
-            *lastVoid = c;
-            *secondLastVoid = c;
-            somethingChangedHere = 1;
+            for(size_t i = 0; i < add_idx; i++)
+            {
+                *addresses[i] = '0';
+                somethingChangedHere = 1;
+            }
         }
     }
+    
+
     return somethingChangedHere;
 }
 
