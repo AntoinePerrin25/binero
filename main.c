@@ -261,91 +261,47 @@ size_t FillTheHole(Game* game)
 size_t QuotaExhausted(Game* game)
 {
     size_t somethingChangedHere = 0;
-    size_t n0;
-    size_t n1;
 
-    // Analyzing Lines
-    for (size_t i = 0; i < game->size; i++)
+    // dir 0 = lines, dir 1 = columns
+    for (size_t dir = 0; dir < 2; dir++)
     {
-        n0 = 0;
-        n1 = 0;
-        char* addresses[7] = {0};
-        size_t add_idx = 0;
-        for (size_t j = 0; j < game->size; j++)
-        {
-            size_t idx = i * game->size + j;
-            if(game->array[idx].value == '0') n0++;   
-            if(game->array[idx].value == '1') n1++;   
-            if(game->array[idx].value == ' ' || game->array[idx].value == 0)
-            {
-                if (add_idx != game->size/2)
-                {
-                    addresses[add_idx++] = &game->array[idx].value;
-                    continue;
-                }
-            }   
-        }
-        // 7/x
-        if(n0 == game->size/2 && n1 != game->size/2)
-        {
-            for(size_t i = 0; i < add_idx; i++)
-            {
-                *addresses[i] = '1';
-                somethingChangedHere = 1;
-            }
-        }
-        // x/7
-        if(n1 == game->size/2 && n0 != game->size/2)
-        {
-            for(size_t i = 0; i < add_idx; i++)
-            {
-                *addresses[i] = '0';
-                somethingChangedHere = 1;
-            }
-        }
-    }
-
-    // Analyzing Columns
-    for (size_t j = 0; j < game->size; j++)
-    {
-        n0 = 0;
-        n1 = 0;
-        char* addresses[7] = {0};
-        size_t add_idx = 0;
         for (size_t i = 0; i < game->size; i++)
         {
-            size_t idx = i * game->size + j;
-            if(game->array[idx].value == '0') n0++;   
-            if(game->array[idx].value == '1') n1++;   
-            if(game->array[idx].value == ' ' || game->array[idx].value == 0)
+            size_t n0 = 0, n1 = 0;
+            char* addresses[7] = {0};
+            size_t add_idx = 0;
+            for (size_t j = 0; j < game->size; j++)
             {
-                if (add_idx != game->size/2)
+                size_t idx = dir == 0 ? i * game->size + j : j * game->size + i;
+                if(game->array[idx].value == '0') n0++;
+                if(game->array[idx].value == '1') n1++;
+                if(game->array[idx].value == ' ' || game->array[idx].value == 0)
                 {
-                    addresses[add_idx++] = &game->array[idx].value;
-                    continue;
+                    if (add_idx != game->size/2)
+                    {
+                        addresses[add_idx++] = &game->array[idx].value;
+                        continue;
+                    }
                 }
-            }   
-        }
-        // 7/x
-        if(n0 == game->size/2 && n1 != game->size/2)
-        {
-            for(size_t i = 0; i < add_idx; i++)
-            {
-                *addresses[i] = '1';
-                somethingChangedHere = 1;
             }
-        }
-        // x/7
-        if(n1 == game->size/2 && n0 != game->size/2)
-        {
-            for(size_t i = 0; i < add_idx; i++)
+            if(n0 == game->size/2 && n1 != game->size/2)
             {
-                *addresses[i] = '0';
-                somethingChangedHere = 1;
+                for(size_t k = 0; k < add_idx; k++)
+                {
+                    *addresses[k] = '1';
+                    somethingChangedHere = 1;
+                }
+            }
+            if(n1 == game->size/2 && n0 != game->size/2)
+            {
+                for(size_t k = 0; k < add_idx; k++)
+                {
+                    *addresses[k] = '0';
+                    somethingChangedHere = 1;
+                }
             }
         }
     }
-    
 
     return somethingChangedHere;
 }
