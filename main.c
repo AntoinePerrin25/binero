@@ -83,12 +83,17 @@ fclose(file);
     return game;
 }
 
+/*
 Cell* GetCellPtr(Game *game, size_t i, size_t j)
 {
     if(i<game->size && j<game->size)
         return &game->array[i * game->size + j];
     return 0;
 }
+*/
+
+#define GetCellPtr(game, i, j) \
+    ((i) < (game)->size && (j) < (game)->size ? &((game)->array[(i) * (game)->size + (j)]) : NULL)
 
 void PrintGame(Game* game)
 {
@@ -229,7 +234,7 @@ size_t QuotaExhausted(Game* game)
         for (size_t i = 0; i < game->size; i++)
         {
             size_t n0 = 0, n1 = 0;
-            char* addresses[7] = {0};
+            char** addresses = alloca(game->size/2 * sizeof(char*));
             size_t add_idx = 0;
             for (size_t j = 0; j < game->size; j++)
             {
