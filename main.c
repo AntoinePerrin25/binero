@@ -308,7 +308,7 @@ size_t AdjacentPairRule(Game* game)
     return somethingChangedHere;
 }
 
-size_t QuotaExhausted(Game* game)
+size_t QuotaExhaustedRule(Game* game)
 {
     size_t somethingChangedHere = 0;
 
@@ -360,7 +360,7 @@ size_t QuotaExhausted(Game* game)
 
 void EvidentSolve(Game* game)
 {
-    Rule rules[] = { AdjacentPairRule, QuotaExhausted, NULL };
+    Rule rules[] = { AdjacentPairRule, QuotaExhaustedRule, NULL };
 
     size_t somethingChanged;
     do {
@@ -622,20 +622,20 @@ int main(void)
         else if (c == 'r') setCellValue(&game, ' ');
         else if (c == 'c') commitValues(&game);
         else if (c == '&') AdjacentPairRule(&game); // &
-        else if (c == -87) QuotaExhausted(&game); // é
+        else if (c == -87) QuotaExhaustedRule(&game); // é
         else if (c == 's') 
          {
             clock_t start = clock();
             EvidentSolve(&game);
             clock_t end = clock();
-            double time_spent = ((double)(end - start)) / CLOCKS_PER_SEC * 1000000; // Convert to microseconds
+            double time_spent = ((double)(end - start));
             printf("Solved in %.0f micro seconds\n", time_spent);
         }
         else if (c == 'S') {
             clock_t start = clock();
             Solve(&game);
             clock_t end = clock();
-            double time_spent = ((double)(end - start)) / CLOCKS_PER_SEC * 1000000; // Convert to microseconds
+            double time_spent = ((double)(end - start));
             printf("Solved in %.0f micro seconds\n", time_spent);
         }
         else if (c == 'x') ExportLevel(&game);
