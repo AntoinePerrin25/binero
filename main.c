@@ -258,7 +258,7 @@ size_t FillTheHole(Game* game)
     return somethingChangedHere;
 }
 
-size_t FillLastValue(Game* game)
+size_t QuotaExhausted(Game* game)
 {
     // for each line and each value, count -> 6/7 -> .
     size_t somethingChangedHere = 0;
@@ -365,7 +365,7 @@ typedef size_t (*Rule)(Game*);
 
 void solve(Game* game)
 {
-    Rule rules[] = { TwoEqualsThree, FillTheHole, FillLastValue, NULL };
+    Rule rules[] = { TwoEqualsThree, FillTheHole, QuotaExhausted, NULL };
 
     size_t somethingChanged;
     clock_t start = clock();
@@ -499,7 +499,8 @@ int main(void)
     
     while (1) {
         /* move cursor home, clear screen and scrollback to avoid stacking output */
-        printf("\x1b[H\x1b[2J"/*"\x1b[3J"*/);
+        char clearScreen[] = "\x1b[H\x1b[2J"; //[CB]: "\x1b[H\x1b[2J\x1b[3J";|"\x1b[H\x1b[2J";
+        printf("%s", clearScreen);
         PrintGame(&game);
         printf("Flèches: nav | 'a'->'0' | 'e'->'1' | 'r': clear | 'c': commit | 'q': quitter\n");
         
@@ -510,8 +511,12 @@ int main(void)
         if (c == 'q') break;
         else if (c == 'a') setCellValue(&game, '0');
         else if (c == 'e') setCellValue(&game, '1');
-        else if (c == 'c') commitValues(&game); 
         else if (c == 'r') setCellValue(&game, ' ');
+        else if (c == 'c') commitValues(&game);
+        // TwoEqualsThree, FillTheHole, FillLastValue
+        else if (c == 38) TwoEqualsThree(&game); // &
+        else if (c == -87) FillTheHole(&game);   // é
+        else if (c == 34) QuotaExhausted(&game); // "
         else if (c == 's') solve(&game); 
         else if (c == '\x1b') { /* escape sequence */
             char seq[2];
@@ -525,6 +530,9 @@ int main(void)
                 else if (seq[1] == 'D') moveSelection(&game, -1, 0); /* left */
             }
         }
+        // else {
+        //     printf("Touche non reconnue: %d\n", c);
+        // }
     }
     
     FreeGame(&game);
