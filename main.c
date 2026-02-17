@@ -176,17 +176,17 @@ void commitValues(Game* game)
     }
 }
 
-size_t TwoEqualsThree(Game* game)
+size_t AdjacentPairRule(Game* game)
 {
-    // 00 -> 001/100
-    // 11 -> 110/011
+    // TwoEqualsThree: 00_ -> 001, _00 -> 100  (c==c1 → fill c2)
+    // FillTheHole:    0_0 -> 010, 1_1 -> 101   (c==c2 → fill c1)
     char somethingChangedHere = 0;
     for (size_t i = 0; i < game->size; i++)
     {
         for (size_t j = 0; j < game->size; j++)
         {
             Cell* cell = GetCellPtr(game, i, j);
-            if (cell->value == ' ' || cell->value == 0) continue; /* skip empty cells */
+            if (cell->value == ' ' || cell->value == 0) continue;
 
             Cell* cells[5][2] = {
                 {cell, NULL},
@@ -195,62 +195,23 @@ size_t TwoEqualsThree(Game* game)
                 {GetCellPtr(game, i-1, j), GetCellPtr(game, i-2, j)},
                 {GetCellPtr(game, i, j-1), GetCellPtr(game, i, j-2)}
             };
-            char c = cells[0][0]->value;
-            if (c != ' ' && c != 0)
-            {
-                for (size_t k = 1; k <= 4; k++) {
-                    Cell* c1 = cells[k][0];
-                    Cell* c2 = cells[k][1];
-                    if (!c1 || !c2) continue;
-                    if (c2->isImmutable) continue;
-                    if (c2->value != ' ' && c2->value != 0)
-                        continue;
-                    if (c == c1->value)
-                    {
-                        c2->value = c == '0' ? '1' : '0';
-                        somethingChangedHere = 1;
-                    }
+            char c = cell->value;
+            for (size_t k = 1; k <= 4; k++) {
+                Cell* c1 = cells[k][0];
+                Cell* c2 = cells[k][1];
+                if (!c1 || !c2) continue;
+                char opposite = c == '0' ? '1' : '0';
+                /* 00_ / _00 */
+                if (c == c1->value && !c2->isImmutable && (c2->value == ' ' || c2->value == 0))
+                {
+                    c2->value = opposite;
+                    somethingChangedHere = 1;
                 }
-            }
-        }
-    }
-    return somethingChangedHere;
-}
-
-size_t FillTheHole(Game* game)
-{
-    // 0_0 -> 010
-    // 1_1 -> 101
-    char somethingChangedHere = 0;
-    for (size_t i = 0; i < game->size; i++)
-    {
-        for (size_t j = 0; j < game->size; j++)
-        {
-            Cell* cell = GetCellPtr(game, i, j);
-            if (cell->value == ' ' || cell->value == 0) continue; /* skip empty cells */
-
-            Cell* cells[5][2] = {
-                {cell, NULL},
-                {GetCellPtr(game, i+1, j), GetCellPtr(game, i+2, j)},
-                {GetCellPtr(game, i, j+1), GetCellPtr(game, i, j+2)},
-                {GetCellPtr(game, i-1, j), GetCellPtr(game, i-2, j)},
-                {GetCellPtr(game, i, j-1), GetCellPtr(game, i, j-2)}
-            };
-            char c = cells[0][0]->value;
-            if (c != ' ' && c != 0)
-            {
-                for (size_t k = 1; k <= 4; k++) {
-                    Cell* c1 = cells[k][0];
-                    Cell* c2 = cells[k][1];
-                    if (!c1 || !c2) continue;
-                    if (c1->isImmutable) continue;
-                    if (c1->value != ' ' && c1->value != 0)
-                        continue;
-                    if (c == c2->value)
-                    {
-                        c1->value = c == '0' ? '1' : '0';
-                        somethingChangedHere = 1;
-                    }
+                /* 0_0 / 1_1 */
+                if (c == c2->value && !c1->isImmutable && (c1->value == ' ' || c1->value == 0))
+                {
+                    c1->value = opposite;
+                    somethingChangedHere = 1;
                 }
             }
         }
@@ -316,7 +277,7 @@ typedef size_t (*Rule)(Game*);
 
 void solve(Game* game)
 {
-    Rule rules[] = { TwoEqualsThree, FillTheHole, QuotaExhausted, NULL };
+    Rule rules[] = { AdjacentPairRule, QuotaExhausted, NULL };
 
     size_t somethingChanged;
     clock_t start = clock();
@@ -464,9 +425,8 @@ int main(void)
         else if (c == 'e') setCellValue(&game, '1');
         else if (c == 'r') setCellValue(&game, ' ');
         else if (c == 'c') commitValues(&game);
-        // TwoEqualsThree, FillTheHole, FillLastValue
-        else if (c == 38) TwoEqualsThree(&game); // &
-        else if (c == -87) FillTheHole(&game);   // é
+        // AdjacentPairRule, QuotaExhausted
+        else if (c == 38) AdjacentPairRule(&game); // &
         else if (c == 34) QuotaExhausted(&game); // "
         else if (c == 's') solve(&game); 
         else if (c == '\x1b') { /* escape sequence */
