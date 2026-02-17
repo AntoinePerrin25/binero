@@ -5,15 +5,44 @@
 #include <unistd.h>
 #include <termios.h>
 #include <time.h>
+#include <dirent.h>
 
 #define RED   "\x1b[31m"
 #define GREEN "\x1b[32m"
 #define YELLOW "\x1b[33m"
 #define BG_WHITE "\x1b[47m"
 #define RESET "\x1b[0m"
-
+#define NOT_FINISHED 0
+#define WIN 1
+#define IMPOSSIBLE 2
 #define LIKELY(x)   __builtin_expect(!!(x), 1)
 #define UNLIKELY(x) __builtin_expect(!!(x), 0)
+
+#define mesure(instruction) \
+    do { \
+        clock_t start = clock(); \
+        instruction; \
+        clock_t end = clock(); \
+        double time_spent = ((double)(end - start)) / CLOCKS_PER_SEC * 1000000; /* Convert to microseconds */ \
+        printf("Executed in %.0f micro seconds\n", time_spent); \
+    } while (0)
+
+#define GetCellPtr(game, i, j) ((i) < (game)->size && (j) < (game)->size ? &((game)->array[(i) * (game)->size + (j)]) : NULL)
+
+#define da_append(xs, x)                                                             \
+    do {                                                                             \
+        if ((xs)->count >= (xs)->capacity) {                                         \
+            if ((xs)->capacity == 0) (xs)->capacity = 256;                           \
+            else (xs)->capacity *= 2;                                                \
+            (xs)->items = realloc((xs)->items, (xs)->capacity*sizeof(*(xs)->items)); \
+        }                                                                            \
+                                                                                     \
+        (xs)->items[(xs)->count++] = (x);                                            \
+    } while (0)
+
+#define da_free(da) free((da)->items)
+#define nob_da_foreach(Type, it, da) for (Type *it = (da)->items; it < (da)->items + (da)->count; ++it)
+
 
 typedef struct __attribute__((packed)) Cell_s {
     char value;
@@ -28,10 +57,70 @@ typedef struct __attribute__((packed)) Game_s {
     size_t selected;
 } Game;
 
+typedef size_t (*Rule)(Game*);
+typedef struct {
+    int *items;
+    size_t count;
+    size_t capacity;
+} Indexes;
+
 /* Debug: solution reference for solver validation */
 static char *g_solution = NULL;
 static size_t g_solution_size = 0;
 size_t PrintAndDebug = 0; //[CB]: 0;|1;
+
+
+/* Mode terminal raw (capture touches sans Enter) */
+static struct termios orig_termios;
+
+void disableRawMode(void)
+{
+    tcsetattr(STDIN_FILENO, TCSANOW, &orig_termios);
+}
+
+void enableRawMode(void)
+{
+    if (tcgetattr(STDIN_FILENO, &orig_termios) == -1) {
+        perror("tcgetattr");
+        exit(EXIT_FAILURE);
+    }
+    atexit(disableRawMode);
+
+    struct termios raw = orig_termios;
+    raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
+    //raw.c_oflag &= ~(OPOST);
+    raw.c_cflag |= (CS8);
+    raw.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
+    raw.c_cc[VMIN] = 1;
+    raw.c_cc[VTIME] = 0;
+
+    if (tcsetattr(STDIN_FILENO, TCSANOW, &raw) == -1) {
+        perror("tcsetattr");
+        exit(EXIT_FAILURE);
+    }
+}
+
+
+Game InitGame(size_t size)
+{
+    Game game = {
+        .size = size,
+        .array = calloc(size * size, sizeof(Cell)),
+        .selected = 0}; 
+    if (!game.array) {
+        perror("calloc");
+        exit(EXIT_FAILURE);
+    }
+    return game;
+}
+
+void FreeGame(Game *game)
+{
+    if (!game) return;
+    free(game->array);
+    game->array = NULL;
+    game->size = 0;
+}
 
 void LoadSolution(const char *path, size_t size)
 {
@@ -70,26 +159,6 @@ static inline void debugCheckCell(Game *game, size_t idx, char newVal, const cha
     }
 }
 
-Game InitGame(size_t size)
-{
-    Game game = {
-        .size = size,
-        .array = calloc(size * size, sizeof(Cell)),
-        .selected = 0}; 
-    if (!game.array) {
-        perror("calloc");
-        exit(EXIT_FAILURE);
-    }
-    return game;
-}
-
-void FreeGame(Game *game)
-{
-    if (!game) return;
-    free(game->array);
-    game->array = NULL;
-    game->size = 0;
-}
 
 Game LoadLevel(const char *path)
 {
@@ -137,8 +206,6 @@ Cell* GetCellPtr(Game *game, size_t i, size_t j)
 }
 */
 
-#define GetCellPtr(game, i, j) \
-    ((i) < (game)->size && (j) < (game)->size ? &((game)->array[(i) * (game)->size + (j)]) : NULL)
 
 void PrintGame(Game* game)
 {
@@ -165,36 +232,6 @@ void PrintGame(Game* game)
         printf("\n");
     }
     fflush(stdout);
-}
-
-/* Mode terminal raw (capture touches sans Enter) */
-static struct termios orig_termios;
-
-void disableRawMode(void)
-{
-    tcsetattr(STDIN_FILENO, TCSANOW, &orig_termios);
-}
-
-void enableRawMode(void)
-{
-    if (tcgetattr(STDIN_FILENO, &orig_termios) == -1) {
-        perror("tcgetattr");
-        exit(EXIT_FAILURE);
-    }
-    atexit(disableRawMode);
-
-    struct termios raw = orig_termios;
-    raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
-    //raw.c_oflag &= ~(OPOST);
-    raw.c_cflag |= (CS8);
-    raw.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
-    raw.c_cc[VMIN] = 1;
-    raw.c_cc[VTIME] = 0;
-
-    if (tcsetattr(STDIN_FILENO, TCSANOW, &raw) == -1) {
-        perror("tcsetattr");
-        exit(EXIT_FAILURE);
-    }
 }
 
 void moveSelection(Game* game, int dx, int dy)
@@ -321,30 +358,18 @@ size_t QuotaExhausted(Game* game)
     return somethingChangedHere;
 }
 
-size_t next(Game* game)
-{
-    (void) game;
-    return 0;
-}
-
-typedef size_t (*Rule)(Game*);
-
 void EvidentSolve(Game* game)
 {
     Rule rules[] = { AdjacentPairRule, QuotaExhausted, NULL };
 
     size_t somethingChanged;
-    clock_t start = clock();
     do {
         somethingChanged = 0;
         for (size_t i = 0; rules[i] != NULL; ++i) {
             somethingChanged |= rules[i](game);
         }
     } while (LIKELY(somethingChanged));
-    clock_t end = clock();
-    double time_spent = ((double)(end - start)) / CLOCKS_PER_SEC * 1000000; // Convert to microseconds
-    if(PrintAndDebug)
-        printf("Solved in %.0f micro seconds\n", time_spent);
+    
 }
 
 Game CloneGame(const Game *src)
@@ -354,33 +379,6 @@ Game CloneGame(const Game *src)
     memcpy(g.array, src->array, src->size * src->size * sizeof(Cell));
     return g;
 }
-
-
-#define da_append(xs, x)                                                             \
-    do {                                                                             \
-        if ((xs)->count >= (xs)->capacity) {                                         \
-            if ((xs)->capacity == 0) (xs)->capacity = 256;                           \
-            else (xs)->capacity *= 2;                                                \
-            (xs)->items = realloc((xs)->items, (xs)->capacity*sizeof(*(xs)->items)); \
-        }                                                                            \
-                                                                                     \
-        (xs)->items[(xs)->count++] = (x);                                            \
-    } while (0)
-
-#define da_free(da) free((da)->items)
-#define nob_da_foreach(Type, it, da) for (Type *it = (da)->items; it < (da)->items + (da)->count; ++it)
-
-typedef struct {
-    int *items;
-    size_t count;
-    size_t capacity;
-} Indexes;
-
-
-#define NOT_FINISHED 0
-#define WIN 1
-#define IMPOSSIBLE 2
-
 
 size_t checkWin(Game* game)
 {
@@ -462,7 +460,6 @@ size_t checkWin(Game* game)
     return WIN;
 }
 
-
 void Solve(Game* game)
 {
     // Make a copy to work on
@@ -506,9 +503,6 @@ cleanup:
     free(emptyCells.items);
     FreeGame(&myGame);
 }
-
-
-#include <dirent.h>
 
 void ExportLevel(Game *game)
 {
@@ -610,7 +604,6 @@ int main(void)
     Game game = SelectLevel();
 
     enableRawMode();
-
     
     while (1) {
         /* move cursor home, clear screen and scrollback to avoid stacking output */
@@ -630,8 +623,21 @@ int main(void)
         else if (c == 'c') commitValues(&game);
         else if (c == '&') AdjacentPairRule(&game); // &
         else if (c == -87) QuotaExhausted(&game); // é
-        else if (c == 's') EvidentSolve(&game);
-        else if (c == 'S') Solve(&game);
+        else if (c == 's') 
+         {
+            clock_t start = clock();
+            EvidentSolve(&game);
+            clock_t end = clock();
+            double time_spent = ((double)(end - start)) / CLOCKS_PER_SEC * 1000000; // Convert to microseconds
+            printf("Solved in %.0f micro seconds\n", time_spent);
+        }
+        else if (c == 'S') {
+            clock_t start = clock();
+            Solve(&game);
+            clock_t end = clock();
+            double time_spent = ((double)(end - start)) / CLOCKS_PER_SEC * 1000000; // Convert to microseconds
+            printf("Solved in %.0f micro seconds\n", time_spent);
+        }
         else if (c == 'x') ExportLevel(&game);
         else if (c == 'w') win = checkWin(&game);
         else if (c == '\x1b') { /* escape sequence */
