@@ -2,10 +2,21 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
-#include <unistd.h>
-#include <termios.h>
 #include <time.h>
-#include <dirent.h>
+
+#ifdef _WIN32
+#  include <windows.h>
+#  include <conio.h>
+#  include <io.h>
+#  include <malloc.h>
+#  ifndef alloca
+#    define alloca _alloca
+#  endif
+#else
+#  include <unistd.h>
+#  include <termios.h>
+#  include <dirent.h>
+#endif
 
 #define RED   "\x1b[31m"
 #define GREEN "\x1b[32m"
@@ -71,6 +82,24 @@ size_t PrintAndDebug = 0; //[CB]: 0;|1;
 
 
 /* Mode terminal raw (capture touches sans Enter) */
+#ifdef _WIN32
+
+static HANDLE hConsoleOut;
+
+void disableRawMode(void) { /* no-op on Windows: _getch() needs no teardown */ }
+
+void enableRawMode(void)
+{
+    /* Enable ANSI/VT escape-sequence processing so colours work in cmd/PowerShell */
+    hConsoleOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    DWORD mode = 0;
+    GetConsoleMode(hConsoleOut, &mode);
+    mode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+    SetConsoleMode(hConsoleOut, mode);
+}
+
+#else /* POSIX */
+
 static struct termios orig_termios;
 
 void disableRawMode(void)
@@ -99,6 +128,8 @@ void enableRawMode(void)
         exit(EXIT_FAILURE);
     }
 }
+
+#endif /* _WIN32 */
 
 
 Game InitGame(size_t size)
@@ -131,7 +162,7 @@ void LoadSolution(const char *path, size_t size)
     for (size_t i = 0; i < size; i++) {
         for (size_t j = 0; j < size; j++) {
             char byte;
-            do { byte = fgetc(f); } while (byte == '\n');
+            do { byte = fgetc(f); } while (byte == '\n' || byte == '\r');
             if (byte == EOF) { fclose(f); free(g_solution); g_solution = NULL; return; }
             g_solution[i * size + j] = byte;
         }
@@ -175,7 +206,7 @@ Game LoadLevel(const char *path)
             char byte;
             do {
                 byte = fgetc(file);
-            } while (byte == '\n');
+            } while (byte == '\n' || byte == '\r');
             
             if (byte == EOF) {
                 printf("Erreur: fichier trop court\n");
@@ -223,13 +254,13 @@ void PrintGame(Game* game)
             size_t isSelected = (i * game->size + j) == game->selected;
             char ch = cell->value ? cell->value : ' ';
 
-            printf("%s%s%c%s|", 
+            printf("%s%s%c%s|",
                 isSelected ? BG_WHITE : "",
                 cell->isCommited ? YELLOW : (cell->isImmutable ? "" : RED),
                 ch,
                 RESET);
         }
-        printf("\n");
+        printf("\r\n");
     }
     fflush(stdout);
 }
@@ -548,6 +579,23 @@ Game SelectLevel(void)
     char paths[64][256];
     size_t count = 0;
 
+#ifdef _WIN32
+    char pattern[280];
+    snprintf(pattern, sizeof(pattern), "%s\\*.binero", levelsDir);
+    WIN32_FIND_DATAA ffd;
+    HANDLE hFind = FindFirstFileA(pattern, &ffd);
+    if (hFind != INVALID_HANDLE_VALUE) {
+        do {
+            size_t len = strlen(ffd.cFileName);
+            if (len > 7 && strcmp(ffd.cFileName + len - 7, ".binero") == 0
+                && !(len > 11 && strcmp(ffd.cFileName + len - 11, ".binero.sol") == 0)) {
+                snprintf(paths[count], sizeof(paths[count]), "%s/%s", levelsDir, ffd.cFileName);
+                count++;
+            }
+        } while (count < 64 && FindNextFileA(hFind, &ffd));
+        FindClose(hFind);
+    }
+#else
     DIR *dir = opendir(levelsDir);
     if (dir) {
         struct dirent *ent;
@@ -561,6 +609,7 @@ Game SelectLevel(void)
         }
         closedir(dir);
     }
+#endif
 
     /* Sort alphabetically */
     for (size_t i = 0; i < count; i++)
@@ -607,14 +656,20 @@ int main(void)
     
     while (1) {
         /* move cursor home, clear screen and scrollback to avoid stacking output */
-        char clearScreen[] = "\x1b[H\x1b[2J\n\n"; //[CB]: "\x1b[H\x1b[2J\x1b[3J\n\n";|"\x1b[H\x1b[2J\n\n";
+        char clearScreen[] = "\x1b[H\x1b[2J\x1b[3J\n\n"; //[CB]: "\x1b[H\x1b[2J\x1b[3J\n\n";|"\x1b[H\x1b[2J\n\n";
         printf("%s", clearScreen);
         PrintGame(&game);
         printf("Flèches: nav|'a'/'e'->'0'/'1'|'r'emove | 'c'ommit | 'x'port | 'q'uit\n");
         char win = 0;
         char c;
-        ssize_t n = read(STDIN_FILENO, &c, 1);
-        if (n <= 0) break;
+#ifdef _WIN32
+        c = (char)_getch();
+#else
+        {
+            ssize_t n = read(STDIN_FILENO, &c, 1);
+            if (n <= 0) break;
+        }
+#endif
         
         if (c == 'q') break;
         else if (c == 'a') setCellValue(&game, '0');
@@ -640,11 +695,20 @@ int main(void)
         }
         else if (c == 'x') ExportLevel(&game);
         else if (c == 'w') win = checkWin(&game);
+#ifdef _WIN32
+        else if (c == 0 || c == (char)0xe0) { /* Windows arrow/extended key prefix */
+            char c2 = (char)_getch();
+            if      (c2 == 72) moveSelection(&game, 0, -1); /* up */
+            else if (c2 == 80) moveSelection(&game, 0, 1);  /* down */
+            else if (c2 == 77) moveSelection(&game, 1, 0);  /* right */
+            else if (c2 == 75) moveSelection(&game, -1, 0); /* left */
+        }
+#else
         else if (c == '\x1b') { /* escape sequence */
             char seq[2];
             if (read(STDIN_FILENO, &seq[0], 1) <= 0) continue;
             if (read(STDIN_FILENO, &seq[1], 1) <= 0) continue;
-            
+
             if (seq[0] == '[') {
                 if (seq[1] == 'A') moveSelection(&game, 0, -1); /* up */
                 else if (seq[1] == 'B') moveSelection(&game, 0, 1); /* down */
@@ -652,13 +716,18 @@ int main(void)
                 else if (seq[1] == 'D') moveSelection(&game, -1, 0); /* left */
             }
         }
+#endif
         else {
             printf("Touche non reconnue: %d\n", c);
         }
         if (win == WIN) {
             printf("Congratulations! You've won the game!\n");
             printf("Press any key to exit...\n");
+#ifdef _WIN32
+            _getch();
+#else
             read(STDIN_FILENO, &c, 1);
+#endif
             break;
         }
     }
