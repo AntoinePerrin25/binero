@@ -79,6 +79,7 @@ typedef struct {
 static char *g_solution = NULL;
 static size_t g_solution_size = 0;
 size_t PrintAndDebug = 0; //[CB]: 0;|1;
+static int g_force_redraw = 1;
 
 
 /* Mode terminal raw (capture touches sans Enter) */
@@ -240,28 +241,74 @@ Cell* GetCellPtr(Game *game, size_t i, size_t j)
 
 void PrintGame(Game* game)
 {
-    /* header */
-    printf("   ");
-    for (size_t j = 0; j < game->size; j++) {
-        printf(" %c", 'a' + (char)j);
-    }
-    printf("\n");
+    /* Per-cell render state for differential updates */
+    typedef struct { char value; unsigned char flags; } RState;
+    static RState *prev = NULL;
+    static size_t prev_size = 0;
 
-    for (size_t i = 0; i < game->size; i++) {
-        printf("%2zu:|", i + 1);
-        for (size_t j = 0; j < game->size; j++) {
-            Cell* cell = GetCellPtr(game, i, j);
-            size_t isSelected = (i * game->size + j) == game->selected;
-            char ch = cell->value ? cell->value : ' ';
+    size_t total = game->size * game->size;
+    int full_redraw = g_force_redraw || !prev || prev_size != game->size;
 
-            printf("%s%s%c%s|",
-                isSelected ? BG_WHITE : "",
-                cell->isCommited ? YELLOW : (cell->isImmutable ? "" : RED),
-                ch,
-                RESET);
+    if (full_redraw) {
+        free(prev);
+        prev = malloc(total * sizeof(*prev));
+        memset(prev, 0xFF, total * sizeof(*prev)); /* force every cell diff */
+        prev_size = game->size;
+        g_force_redraw = 0;
+
+        /* Clear screen and draw static parts */
+        printf("\x1b[H\x1b[2J\x1b[3J\x1b[?25l");
+
+        /* Header at row 1 */
+        printf("\x1b[1;1H   ");
+        for (size_t j = 0; j < game->size; j++)
+            printf(" %c", 'a' + (char)j);
+
+        /* Row labels and pipe skeleton */
+        for (size_t i = 0; i < game->size; i++) {
+            printf("\x1b[%zu;1H%2zu:|", i + 2, i + 1);
+            for (size_t j = 0; j < game->size; j++)
+                printf(" |");
         }
-        printf("\r\n");
+
+        /* Footer */
+        printf("\x1b[%zu;1H" "Fleches: nav|'a'/'e'->'0'/'1'|'r'emove | 'c'ommit | 'x'port | 'q'uit",
+               game->size + 2);
     }
+
+    /* Clear message area (2 lines) */
+    printf("\x1b[%zu;1H\x1b[2K\x1b[%zu;1H\x1b[2K",
+           game->size + 3, game->size + 4);
+
+    /* Update only changed cells */
+    for (size_t i = 0; i < game->size; i++) {
+        for (size_t j = 0; j < game->size; j++) {
+            size_t idx = i * game->size + j;
+            Cell *cell = &game->array[idx];
+            unsigned char sel = (idx == game->selected) ? 1 : 0;
+            unsigned char flags = (unsigned char)(
+                (cell->isImmutable ? 1u : 0u) |
+                (cell->isCommited  ? 2u : 0u) |
+                (sel               ? 4u : 0u));
+
+            if (prev[idx].value == cell->value && prev[idx].flags == flags)
+                continue;
+
+            char ch = (cell->value && cell->value != ' ') ? cell->value : ' ';
+            printf("\x1b[%zu;%zuH%s%s%c%s|",
+                   i + 2, (size_t)(5 + j * 2),
+                   sel ? BG_WHITE : "",
+                   cell->isCommited ? YELLOW : (cell->isImmutable ? "" : RED),
+                   ch,
+                   RESET);
+
+            prev[idx].value = cell->value;
+            prev[idx].flags = flags;
+        }
+    }
+
+    /* Park cursor at message area */
+    printf("\x1b[%zu;1H", game->size + 3);
     fflush(stdout);
 }
 
@@ -570,6 +617,7 @@ void ExportLevel(Game *game)
     fclose(f);
     printf("Exporté vers %s\n", path);
     enableRawMode();
+    g_force_redraw = 1;
 }
 
 Game SelectLevel(void)
@@ -621,28 +669,82 @@ Game SelectLevel(void)
                 memcpy(paths[j], tmp, 256);
             }
 
-    printf("\x1b[H\x1b[2J");
-    printf("=== BINERO ===\n\n");
+    /* Interactive arrow-key menu */
+    enableRawMode();
+    int sel = 0, prev_sel = -1;
+    int total_items = (int)count + 1; /* levels + empty grid */
+
+    /* Draw once */
+    printf("\x1b[H\x1b[2J\x1b[?25l"); /* clear + hide cursor */
+    printf("=== BINERO ===\r\n\r\n");
     for (size_t i = 0; i < count; i++)
-        printf("  %zu) %s\n", i + 1, paths[i]);
-    printf("  0) Grille vide 14x14\n");
-    printf("\nChoix: ");
+        printf("  %zu) %s\r\n", i + 1, paths[i]);
+    printf("  0) Grille vide 14x14\r\n");
+    printf("\r\nFleches: haut/bas | Entree: valider\r\n");
+
+    for (;;) {
+        /* Update only changed lines */
+        if (prev_sel != sel) {
+            if (prev_sel >= 0) {
+                /* Unhighlight previous (menu items start at row 3) */
+                printf("\x1b[%d;1H\x1b[2K", prev_sel + 3);
+                if (prev_sel < (int)count)
+                    printf("  %d) %s", prev_sel + 1, paths[prev_sel]);
+                else
+                    printf("  0) Grille vide 14x14");
+            }
+            /* Highlight current */
+            printf("\x1b[%d;1H\x1b[2K", sel + 3);
+            if (sel < (int)count)
+                printf("  " BG_WHITE "%d) %s" RESET, sel + 1, paths[sel]);
+            else
+                printf("  " BG_WHITE "0) Grille vide 14x14" RESET);
+
+            prev_sel = sel;
+        }
+        fflush(stdout);
+
+        char c;
+#ifdef _WIN32
+        c = (char)_getch();
+        if (c == 0 || c == (char)0xe0) {
+            char c2 = (char)_getch();
+            if      (c2 == 72 && sel > 0)              sel--;  /* up */
+            else if (c2 == 80 && sel < total_items - 1) sel++; /* down */
+        }
+        else if (c == '\r') break;
+        else if (c == 'q') { sel = (int)count; break; } /* quick exit */
+#else
+        {
+            ssize_t n = read(STDIN_FILENO, &c, 1);
+            if (n <= 0) break;
+        }
+        if (c == '\x1b') {
+            char seq[2];
+            if (read(STDIN_FILENO, &seq[0], 1) > 0 &&
+                read(STDIN_FILENO, &seq[1], 1) > 0 && seq[0] == '[') {
+                if      (seq[1] == 'A' && sel > 0)              sel--;  /* up */
+                else if (seq[1] == 'B' && sel < total_items - 1) sel++; /* down */
+            }
+        }
+        else if (c == '\r' || c == '\n') break;
+        else if (c == 'q') { sel = (int)count; break; } /* quick exit */
+#endif
+    }
+
+    printf("\x1b[?25h"); /* restore cursor */
     fflush(stdout);
+    disableRawMode();
 
-    /* Read choice (raw mode is not enabled yet) */
-    char buf[16] = {0};
-    if (fgets(buf, sizeof(buf), stdin) == NULL) buf[0] = '0';
-    int choice = atoi(buf);
-
-    if (choice >= 1 && choice <= (int)count) {
-        Game game = LoadLevel(paths[choice - 1]);
-
-        /* Try to load matching .sol file */
+    if (sel < (int)count) {
+        Game game = LoadLevel(paths[sel]);
         char solPath[270];
-        snprintf(solPath, sizeof(solPath), "%s.sol", paths[choice - 1]);
+        snprintf(solPath, sizeof(solPath), "%s.sol", paths[sel]);
         LoadSolution(solPath, game.size);
-
         return game;
+    }
+    else if (sel == (int)count) {
+        return (Game) {0};
     }
 
     return InitGame(14);
@@ -651,15 +753,16 @@ Game SelectLevel(void)
 int main(void)
 {
     Game game = SelectLevel();
-
+    if (game.size == 0) {
+        // Clear screen and exit if no level selected
+        printf("\x1b[H\x1b[2J\x1b[3J");
+        printf("Aucun niveau sélectionné. Au revoir!\n");
+        return 0;
+    }
     enableRawMode();
     
     while (1) {
-        /* move cursor home, clear screen and scrollback to avoid stacking output */
-        char clearScreen[] = "\x1b[H\x1b[2J\x1b[3J\n\n"; //[CB]: "\x1b[H\x1b[2J\x1b[3J\n\n";|"\x1b[H\x1b[2J\n\n";
-        printf("%s", clearScreen);
         PrintGame(&game);
-        printf("Flèches: nav|'a'/'e'->'0'/'1'|'r'emove | 'c'ommit | 'x'port | 'q'uit\n");
         char win = 0;
         char c;
 #ifdef _WIN32
@@ -731,7 +834,8 @@ int main(void)
             break;
         }
     }
-    
+    disableRawMode();
+    printf("\x1b[?25h"); /* restore cursor */
     FreeSolution();
     FreeGame(&game);
 
